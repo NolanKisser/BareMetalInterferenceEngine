@@ -1,0 +1,14 @@
+# This is a bare-metal C++/CUDA project. 
+# It does NOT use Python, so running `pip install -r requirements.txt` is not applicable.
+# 
+# To build and run this project, you must install the following system dependencies:
+# 
+# 1. CMake (version >= 3.18)
+#    Download: https://cmake.org/download/
+#
+# 2. A C++17 Compatible Compiler
+#    Windows: Visual Studio Build Tools (Desktop development with C++)
+#    Linux: GCC/g++ (version 9 or higher)
+#
+# 3. NVIDIA CUDA Toolkit (nvcc compiler)
+#    Download: https://developer.nvidia.com/cuda-downloads
