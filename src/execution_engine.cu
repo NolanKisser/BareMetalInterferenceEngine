@@ -1,4 +1,5 @@
 #include "execution_engine.h"
+#include "kernels.cuh"
 #include <iostream>
 
 ExecutionEngine::ExecutionEngine(std::shared_ptr<MemoryAllocator> allocator, std::shared_ptr<KVCache> kv_cache)
@@ -19,23 +20,29 @@ std::vector<float> ExecutionEngine::forward(const std::vector<int>& input_tokens
 
     // 1. Token Embeddings lookup (CPU to GPU for now, or just simulate)
     std::cout << "  -> Embedding Lookup" << std::endl;
-    // In reality, we'd launch a CUDA kernel to pull vectors from allocator_->get_device_tensor("tok_embeddings.weight")
-    // into hidden_states_
 
     // 2. Iterate through transformer layers
     for (int l = 0; l < num_layers_; ++l) {
-        // std::cout << "  -> Layer " << l << " Forward" << std::endl;
         
         // a. RMSNorm (Attention)
-        // b. Attention (Q, K, V Projections)
+        float* d_weight_norm = (float*)allocator_->get_device_tensor("layers.0.attention_norm.weight");
+        if (d_weight_norm) {
+            launch_rms_norm(hidden_states_->get(), hidden_states_->get(), d_weight_norm, dim_);
+        }
         
         // Update KV Cache pointers for this layer
         float* k_cache_ptr = kv_cache_->get_key_cache(l);
         float* v_cache_ptr = kv_cache_->get_value_cache(l);
         
         // c. Attention Math (RoPE, QK^T / sqrt(d), Softmax, *V)
-        // d. RMSNorm (FFN)
+        launch_rope(hidden_states_->get(), k_cache_ptr, kv_cache_->get_current_seq_pos(), 128, 32, 8);
+        
         // e. FFN (Gate, Up, Down Projections)
+        // Dummy GEMM launch
+        float* d_gate = (float*)allocator_->get_device_tensor("layers.0.ffn.gate.weight");
+        if (d_gate) {
+            launch_gemm(hidden_states_->get(), hidden_states_->get(), d_gate, 1, 4096, 4096);
+        }
     }
 
     std::cout << "  -> Processed " << num_layers_ << " Transformer Layers." << std::endl;
