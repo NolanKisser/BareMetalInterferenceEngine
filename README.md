@@ -25,9 +25,9 @@ The project builds 3 distinct executable targets:
 
 To compile and run this project, you must have the following installed and available in your system's `PATH`:
 
-1.  **CMake** (version 3.18 or higher)
+1.  **CMake** (version 3.24 or higher)
 2.  **C++17 Compiler** (e.g., MSVC `cl.exe` for Windows, or `g++` for Linux)
-3.  **NVIDIA CUDA Toolkit** (`nvcc` compiler)
+3.  **NVIDIA CUDA Toolkit** (`nvcc` compiler). RTX 50-series (Blackwell, sm_120) GPUs need CUDA 12.8 or newer.
 
 > **Windows Users**: It is highly recommended to run the build commands from inside the **Developer Command Prompt for Visual Studio**, as this automatically configures the environment variables for `cl` and `cmake`.
 

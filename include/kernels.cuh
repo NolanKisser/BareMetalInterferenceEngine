@@ -5,7 +5,7 @@
 
 // Launch configurations and math kernels
 
-// 1. RMSNorm
+// 1. RMSNorm (single vector of `size` elements; in-place is allowed)
 void launch_rms_norm(float* out, float* in, float* weight, int size, cudaStream_t stream = 0);
 
 // 2. Rotary Positional Embeddings (RoPE)
@@ -13,6 +13,7 @@ void launch_rope(float* q, float* k, int seq_pos, int head_dim, int num_heads, i
 
 // 3. Matrix Multiplication (GEMM) - block tiled
 // C = A * B. A is [M x K], B is [K x N], C is [M x N]
+// C must not alias A or B: tiles of A are re-read after other blocks write C.
 void launch_gemm(float* C, float* A, float* B, int M, int N, int K, cudaStream_t stream = 0);
 
 // 4. Softmax

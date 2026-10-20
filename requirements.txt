@@ -3,7 +3,7 @@
 # 
 # To build and run this project, you must install the following system dependencies:
 # 
-# 1. CMake (version >= 3.18)
+# 1. CMake (version >= 3.24)
 #    Download: https://cmake.org/download/
 #
 # 2. A C++17 Compatible Compiler

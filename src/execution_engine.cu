@@ -1,15 +1,20 @@
 #include "execution_engine.h"
 #include "kernels.cuh"
 #include <iostream>
+#include <stdexcept>
 
 ExecutionEngine::ExecutionEngine(std::shared_ptr<MemoryAllocator> allocator, std::shared_ptr<KVCache> kv_cache)
     : allocator_(allocator), kv_cache_(kv_cache) 
 {
     // Allocate a buffer for intermediate hidden states 
     // Max batch size * Max Seq Len * Dim (dummy allocation of 1 token batch for now)
-    size_t hidden_size = 1 * 1 * dim_ * sizeof(float);
-    hidden_states_ = std::make_shared<DeviceBuffer<float>>(hidden_size);
-    std::cout << "Execution Engine Initialized. Intermediate buffer size: " << hidden_size << " bytes." << std::endl;
+    // DeviceBuffer takes an element count, not bytes
+    size_t hidden_elems = 1 * 1 * dim_;
+    hidden_states_ = std::make_shared<DeviceBuffer<float>>(hidden_elems);
+    ffn_out_ = std::make_shared<DeviceBuffer<float>>(hidden_elems);
+    CUDA_CHECK(cudaMemset(hidden_states_->get(), 0, hidden_elems * sizeof(float)));
+    CUDA_CHECK(cudaMemset(ffn_out_->get(), 0, hidden_elems * sizeof(float)));
+    std::cout << "Execution Engine Initialized. Intermediate buffer size: " << hidden_elems * sizeof(float) << " bytes." << std::endl;
 }
 
 ExecutionEngine::~ExecutionEngine() {}
@@ -41,17 +46,17 @@ std::vector<float> ExecutionEngine::forward(const std::vector<int>& input_tokens
         // Dummy GEMM launch
         float* d_gate = (float*)allocator_->get_device_tensor("layers.0.ffn.gate.weight");
         if (d_gate) {
-            launch_gemm(hidden_states_->get(), hidden_states_->get(), d_gate, 1, 4096, 4096);
+            launch_gemm(ffn_out_->get(), hidden_states_->get(), d_gate, 1, dim_, dim_);
         }
     }
 
-    std::cout << "  -> Processed " << num_layers_ << " Transformer Layers." << std::endl;
+    if (verbose_) std::cout << "  -> Processed " << num_layers_ << " Transformer Layers." << std::endl;
 
     // 3. Final RMSNorm
-    std::cout << "  -> Final RMSNorm" << std::endl;
+    if (verbose_) std::cout << "  -> Final RMSNorm" << std::endl;
 
     // 4. Classifier (lm_head)
-    std::cout << "  -> LM Head Projection" << std::endl;
+    if (verbose_) std::cout << "  -> LM Head Projection" << std::endl;
 
     // Increment KV Cache Sequence Position
     kv_cache_->increment_seq_pos(seq_len);

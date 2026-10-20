@@ -1,33 +1,53 @@
 #include "kernels.cuh"
+#include "cuda_utils.h"
 #include <math.h>
 
 // --- RMSNorm ---
+__device__ __forceinline__ float warp_reduce_sum(float val) {
+    for (int offset = warpSize / 2; offset > 0; offset /= 2) {
+        val += __shfl_down_sync(0xffffffff, val, offset);
+    }
+    return val;
+}
+
+// A single block normalizes the whole vector so every thread sees the full
+// sum of squares. Each thread accumulates a strided partial sum, then a
+// warp-shuffle + shared-memory tree reduction produces the block total.
+// Safe to run in place (out == in): each element is read and written by the
+// same thread, and all reads of `in` finish before the final write loop.
 __global__ void rms_norm_kernel(float* out, float* in, float* weight, int size) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    
-    // Shared memory for block reduction (sum of squares)
-    __shared__ float s_sum;
-    if (threadIdx.x == 0) s_sum = 0.0f;
+    __shared__ float s_warp_sums[32];
+
+    float sum = 0.0f;
+    for (int i = threadIdx.x; i < size; i += blockDim.x) {
+        float val = in[i];
+        sum += val * val;
+    }
+
+    int lane = threadIdx.x % warpSize;
+    int warp = threadIdx.x / warpSize;
+    sum = warp_reduce_sum(sum);
+    if (lane == 0) s_warp_sums[warp] = sum;
     __syncthreads();
 
-    float val = (idx < size) ? in[idx] : 0.0f;
-    float sq = val * val;
-
-    // Atomic add for simplicity in this baseline implementation
-    // A tree reduction would be much faster
-    atomicAdd(&s_sum, sq);
+    if (warp == 0) {
+        int num_warps = (blockDim.x + warpSize - 1) / warpSize;
+        sum = (lane < num_warps) ? s_warp_sums[lane] : 0.0f;
+        sum = warp_reduce_sum(sum);
+        if (lane == 0) s_warp_sums[0] = sum;
+    }
     __syncthreads();
 
-    if (idx < size) {
-        float rms = rsqrtf((s_sum / size) + 1e-5f);
-        out[idx] = val * rms * weight[idx];
+    float rms = rsqrtf((s_warp_sums[0] / size) + 1e-5f);
+    for (int i = threadIdx.x; i < size; i += blockDim.x) {
+        out[i] = in[i] * rms * weight[i];
     }
 }
 
 void launch_rms_norm(float* out, float* in, float* weight, int size, cudaStream_t stream) {
-    int threads = 256;
-    int blocks = (size + threads - 1) / threads;
-    rms_norm_kernel<<<blocks, threads, 0, stream>>>(out, in, weight, size);
+    int threads = 1024;
+    rms_norm_kernel<<<1, threads, 0, stream>>>(out, in, weight, size);
+    CUDA_CHECK(cudaGetLastError());
 }
 
 
@@ -70,6 +90,7 @@ void launch_gemm(float* C, float* A, float* B, int M, int N, int K, cudaStream_t
     dim3 threads(TILE_SIZE, TILE_SIZE);
     dim3 blocks((N + TILE_SIZE - 1) / TILE_SIZE, (M + TILE_SIZE - 1) / TILE_SIZE);
     gemm_kernel<<<blocks, threads, 0, stream>>>(C, A, B, M, N, K);
+    CUDA_CHECK(cudaGetLastError());
 }
 
 
@@ -77,14 +98,17 @@ void launch_gemm(float* C, float* A, float* B, int M, int N, int K, cudaStream_t
 __global__ void dummy_rope(float* q, float* k, int seq_pos, int head_dim) {}
 void launch_rope(float* q, float* k, int seq_pos, int head_dim, int num_heads, int num_kv_heads, cudaStream_t stream) {
     dummy_rope<<<1, 1, 0, stream>>>(q, k, seq_pos, head_dim);
+    CUDA_CHECK(cudaGetLastError());
 }
 
 __global__ void dummy_softmax(float* x, int size) {}
 void launch_softmax(float* x, int size, cudaStream_t stream) {
     dummy_softmax<<<1, 256, 0, stream>>>(x, size);
+    CUDA_CHECK(cudaGetLastError());
 }
 
 __global__ void dummy_swiglu(float* out, float* gate, float* up, int size) {}
 void launch_swiglu(float* out, float* gate, float* up, int size, cudaStream_t stream) {
     dummy_swiglu<<<1, 256, 0, stream>>>(out, gate, up, size);
+    CUDA_CHECK(cudaGetLastError());
 }

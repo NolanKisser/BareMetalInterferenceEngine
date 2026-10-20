@@ -1,10 +1,10 @@
-cmake_minimum_required(VERSION 3.18 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.24 FATAL_ERROR)
 project(BareMetalInferenceEngine LANGUAGES CXX CUDA)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Configure CUDA
+# Configure CUDA ("native" targets the installed GPU; needs CMake 3.24+)
 set(CMAKE_CUDA_ARCHITECTURES "native")
 set(CMAKE_CUDA_STANDARD 17)
 
